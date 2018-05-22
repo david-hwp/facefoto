@@ -112,7 +112,7 @@ def search():
         # 2、获得指定group_id下的所有photo
         target_images = get_images_by_group_id(group_id)
         # 3、比对features值
-        matched_images = []
+        matched_images = {}
         if not image:
             return jsonify({'code': 400, 'msg': 'cant not find image by id {0}'.format(image_id)})
 
@@ -131,10 +131,12 @@ def search():
                     dist = get_euclidean_distance(features, one_features)
                     if dist < limit and image[1] != one[1]:
                         print("image match :{0}".format(one[1]))
-                        matched_images.append(one)
+                        matched_images[one] = dist
                         break
+            sorted_matched_images = sort_by_value(matched_images)
+            # print(sorted_matched_images)
             result_body = []
-            for matched in matched_images:
+            for matched in sorted_matched_images:
                 oss_path = matched[2]
                 expires = current_app.config['OSS_URL_EXPIRES']
                 oss_url = get_oss_url(oss_path, expires)
@@ -143,6 +145,13 @@ def search():
             return jsonify({'code': 200, 'data': result_body})
     except Exception as e:
         return jsonify({'code': 500, 'error': "{0}".format(e)})
+
+
+def sort_by_value(d):
+    items = d.items()
+    backitems = [[v[1], v[0]] for v in items]
+    backitems.sort(reverse=True)
+    return [backitems[i][1] for i in range(0, len(backitems))]
 
 
 @bp.route('<int:image_id>', methods=['DELETE'])
