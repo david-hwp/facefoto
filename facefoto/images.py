@@ -20,7 +20,7 @@ bp = Blueprint('images', __name__)
 def get_images_by_group_id(group_id):
     db = get_db()
     cursor = db.cursor()
-    cursor.execute('SELECT * FROM `photo` where group_id=%s' % group_id)
+    cursor.execute("SELECT * FROM `photo` where group_id='%s'" % group_id)
     return cursor.fetchall()
 
 
@@ -30,6 +30,22 @@ def get_image(id):
     # 1、获得photo
     cursor.execute('SELECT * FROM `photo` where id=%s' % id)
     return cursor.fetchone()
+
+
+def get_image_by_oss_path(oss_path):
+    db = get_db()
+    cursor = db.cursor()
+    # 1、获得photo
+    cursor.execute("SELECT * FROM `photo` where oss_path='%s'" % oss_path)
+    return cursor.fetchone()
+
+
+def delete_image_by_oss_path(oss_path):
+    db = get_db()
+    cursor = db.cursor()
+    # 1、获得photo
+    cursor.execute('DELETE FROM `photo` where oss_path=%s' % oss_path)
+    db.commit()
 
 
 @bp.route('', methods=['POST'])
@@ -93,6 +109,108 @@ def images():
             return jsonify({'code': 500, 'error': '{0}'.format(e)})
     else:
         return jsonify({'code': 400, 'msg': 'upload image failed.'})
+
+
+@bp.route('/oss', methods=['POST'])
+def images_from_oss():
+    """upload a photo to group."""
+    if request.method == 'POST':
+        data = request.data
+        obj = json.loads(data)
+        group_id = obj['group_id']
+        oss_url = obj['oss_url']
+        oss_filename = obj['oss_filename']
+
+        try:
+            filename = oss_filename.split('/')[-1]
+            local_filename = current_app.instance_path + "/" + filename
+            res = r.get(url=oss_url)
+            with open(local_filename, 'wb') as f:
+                f.write(res.content)
+            # 2、获得图片的base64编码
+            photo_base64 = base64.b64encode(open(local_filename, 'rb').read())
+            encode_str = str(photo_base64, 'utf-8')
+
+            # 3、通过第三方接口获得图片的特征值
+            ret = r.post(current_app.config['GET_FEATURE_URL'], data=json.dumps({'image': encode_str}),
+                         headers={'content-type': 'application/json'})
+            response = json.loads(ret.text)
+
+            if 'body' in response:
+                body = response['body']
+                # 5、保存photo数据到db
+                db = get_db()
+                cursor = db.cursor()
+                cursor.execute(
+                    "insert into `photo` (name, oss_path, group_id, feature) VALUES ('%s','%s','%s','%s')" % (
+                        filename, oss_filename, group_id, json.dumps(body)))
+                image_id = cursor.lastrowid
+                db.commit()
+                # 6、删除临时图片
+                os.remove(local_filename)
+                return jsonify(
+                    {'code': 200, 'image_id': image_id, 'url': oss_url,
+                     'url_express': current_app.config['OSS_URL_EXPIRES'],
+                     'msg': 'upload image success.'})
+            else:
+                return jsonify(response)
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({'code': 500, 'error': '{0}'.format(e)})
+    else:
+        return jsonify({'code': 400, 'msg': 'upload image failed.'})
+
+
+@bp.route('/searchByOssPath', methods=['POST'])
+def searchByOssPath():
+    if request.method == 'POST':
+        data = request.data
+        obj = json.loads(data)
+        try:
+            group_id = obj['group_id']
+            oss_path = obj['oss_path']
+            print(oss_path)
+
+            limit = float(current_app.config['FEATURES_MAX_MATCH_LIMIT'])
+            limit = 2 * (1 - limit)
+            print("limit {0}".format(limit))
+            # 1、获得photo
+            image = get_image_by_oss_path(oss_path)
+            # 2、获得指定group_id下的所有photo
+            target_images = get_images_by_group_id(group_id)
+            # 3、比对features值
+            matched_images = {}
+            if not image:
+                return jsonify({'code': 400, 'msg': 'cant not find image by oss_path{0}'.format(oss_path)})
+
+            body = json.loads(image[4])
+            print("src image :{0}".format(image[1]))
+            for b in body:
+                features = b['features']
+                if not target_images:
+                    return jsonify({'code': 400, 'msg': 'cant not find any image by group id {0}'.format(group_id)})
+
+                for one in target_images:
+                    print("target image :{0}".format(one[1]))
+                    one_body = json.loads(one[4])
+                    for one_b in one_body:
+                        one_features = one_b['features']
+                        dist = get_euclidean_distance(features, one_features)
+                        if dist < limit and image[1] != one[1]:
+                            print("image match :{0}".format(one[1]))
+                            matched_images[one] = dist
+                            break
+                sorted_matched_images = sort_by_value(matched_images)
+                # print(sorted_matched_images)
+                result_body = []
+                for matched in sorted_matched_images:
+                    oss_path = matched[2]
+                    expires = current_app.config['OSS_URL_EXPIRES']
+                    result_body.append({'id': matched[0], 'name': matched[1], 'expires': expires})
+
+                return jsonify({'code': 200, 'data': result_body})
+        except Exception as e:
+            return jsonify({'code': 500, 'error': "{0}".format(e)})
 
 
 @bp.route('', methods=['GET'])
