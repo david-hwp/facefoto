@@ -115,11 +115,10 @@ def images():
 def images_from_oss():
     """upload a photo to group."""
     if request.method == 'POST':
-        data = request.data
-        obj = json.loads(data)
-        group_id = obj['group_id']
-        oss_url = obj['oss_url']
-        oss_filename = obj['oss_filename']
+        data = request.get_json()
+        group_id = data['group_id']
+        oss_url = data['oss_url']
+        oss_filename = data['oss_filename']
 
         try:
             filename = oss_filename.split('/')[-1]
@@ -164,11 +163,10 @@ def images_from_oss():
 @bp.route('/searchByOssPath', methods=['POST'])
 def searchByOssPath():
     if request.method == 'POST':
-        data = request.data
-        obj = json.loads(data)
+        data = request.get_json()
         try:
-            group_id = obj['group_id']
-            oss_path = obj['oss_path']
+            group_id = data['group_id']
+            oss_path = data['oss_path']
             print(oss_path)
 
             limit = float(current_app.config['FEATURES_MAX_MATCH_LIMIT'])
