@@ -171,9 +171,86 @@ def images_from_oss():
         return jsonify({'code': 400, 'msg': 'upload image failed.'})
 
 
+# 上传图片
+@bp.route('/searchByPhoto', methods=['POST'])
+def search_by_photo():
+    """upload a photo to group."""
+    global local_filename
+    if request.method == 'POST':
+        group_id = request.form['group_id']
+        photo = request.files['photo']
+        if not photo:
+            return jsonify({'code': 400, 'msg': 'photo is required.'})
+        elif not group_id:
+            return jsonify({'code': 400, 'msg': 'group_id is required.'})
+        try:
+            # 1、校验组是否存在
+            group = get_group(group_id)
+            if not group:
+                return jsonify({'code': 400, 'msg': 'can not found group by id [{0}]'.format(group_id)})
+            # 2、获得指定group_id下的所有photo
+            target_images = get_images_by_group_id(group_id)
+            if not target_images:
+                return jsonify({'code': 400, 'msg': 'cant not find any image by group id {0}'.format(group_id)})
+            limit = float(current_app.config['FEATURES_MAX_MATCH_LIMIT'])
+            limit = 2 * (1 - limit)
+            print("limit {0}".format(limit))
+            # 3、上传图片
+            photos = UploadSet('photos', IMAGES)
+            configure_uploads(current_app, photos)
+            filename = photos.save(photo)
+            local_filename = photos.path(filename)
+
+            # 4、获得图片的base64编码
+            photo_base64 = base64.b64encode(open(local_filename, 'rb').read())
+            encode_str = str(photo_base64, 'utf-8')
+
+            # 5、通过第三方接口获得图片的特征值
+            ret = r.post(current_app.config['GET_FEATURE_URL'], data=json.dumps({'image': encode_str}),
+                         headers={'content-type': 'application/json'})
+            response = json.loads(ret.text)
+            print(filename)
+
+            if 'body' in response:
+                body = response['body']
+                for b in body:
+                    features = b['features']
+                    matched_images = {}
+                    for one in target_images:
+                        print("target image :{0}".format(one[1]))
+                        one_body = json.loads(one[4])
+                        for one_b in one_body:
+                            one_features = one_b['features']
+                            dist = get_euclidean_distance(features, one_features)
+                            if dist < limit and filename != one[1]:
+                                print("image match :{0}".format(one[1]))
+                                matched_images[one] = dist
+                                break
+                    sorted_matched_images = sort_by_value(matched_images)
+                    # print(sorted_matched_images)
+                    result_body = []
+                    for matched in sorted_matched_images:
+                        oss_path = matched[2]
+                        expires = current_app.config['OSS_URL_EXPIRES']
+                        oss_url = get_oss_url(oss_path, expires)
+                        result_body.append({'id': matched[0], 'name': matched[1], 'url': oss_url, 'expires': expires})
+
+                    return jsonify({'code': 200, 'data': result_body})
+            else:
+                return jsonify(response)
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({'code': 500, 'error': '{0}'.format(e)})
+        finally:
+            # 6、删除临时图片
+            os.remove(local_filename)
+    else:
+        return jsonify({'code': 400, 'msg': 'upload image failed.'})
+
+
 # 根据oss路径搜索相似图片
 @bp.route('/searchByOssPath', methods=['POST'])
-def searchByOssPath():
+def search_by_oss_path():
     if request.method == 'POST':
         data = request.get_json()
         try:
@@ -192,13 +269,13 @@ def searchByOssPath():
             matched_images = {}
             if not image:
                 return jsonify({'code': 400, 'msg': 'cant not find image by oss_path{0}'.format(oss_path)})
+            if not target_images:
+                return jsonify({'code': 400, 'msg': 'cant not find any image by group id {0}'.format(group_id)})
 
             body = json.loads(image[4])
             print("src image :{0}".format(image[1]))
             for b in body:
                 features = b['features']
-                if not target_images:
-                    return jsonify({'code': 400, 'msg': 'cant not find any image by group id {0}'.format(group_id)})
 
                 for one in target_images:
                     print("target image :{0}".format(one[1]))
@@ -214,8 +291,7 @@ def searchByOssPath():
                 # print(sorted_matched_images)
                 result_body = []
                 for matched in sorted_matched_images:
-                    expires = current_app.config['OSS_URL_EXPIRES']
-                    result_body.append({'id': matched[0], 'name': matched[1], 'expires': expires})
+                    result_body.append({'id': matched[0], 'name': matched[1]})
 
                 return jsonify({'code': 200, 'data': result_body})
         except Exception as e:

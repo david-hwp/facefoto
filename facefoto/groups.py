@@ -102,6 +102,25 @@ def update(id):
             return jsonify({'code': 500, 'error': '{0}'.format(e)})
 
 
+@bp.route('/count/<int:id>', methods=['GET'])
+def count(id):
+    """Update a group """
+    if request.method == 'GET':
+        try:
+            group = get_group(id)
+            if not group:
+                return jsonify({'code': 400, 'msg': 'can not found group by id [{0}]'.format(id)})
+            else:
+                db = get_db()
+                cursor = db.cursor()
+                cursor.execute('SELECT COUNT(*) FROM `photo` WHERE group_id = %s', id)
+                result = cursor.fetchone()
+                return jsonify(
+                    {'code': 200, 'msg': 'query success', 'result': result[0]})
+        except Exception as e:
+            return jsonify({'code': 500, 'error': '{0}'.format(e)})
+
+
 @bp.route('/<int:id>', methods=['DELETE'])
 # @login_required
 def delete(id):
