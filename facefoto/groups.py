@@ -68,7 +68,7 @@ def create():
             group = get_group_by_dir(oss_dir)
             if group:
                 return jsonify(
-                    {'code': 200, 'group_id': group[0], 'msg': 'group [{0}] already created'.format(oss_dir)})
+                    {'code': 400, 'group_id': group[0], 'msg': 'group [{0}] already created'.format(oss_dir)})
 
             db = get_db()
             cursor = db.cursor()

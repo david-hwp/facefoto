@@ -30,7 +30,7 @@ def create_app(test_config=None):
     # register the database commands
     from facefoto import db
     db.init_app(app)
-
+    app.config['UPLOADS_DEFAULT_DEST'] = app.instance_path+'/photos'
     photos = UploadSet('photos', IMAGES)
     configure_uploads(app, photos)
 

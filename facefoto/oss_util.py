@@ -10,7 +10,7 @@ from flask import current_app, g
 def get_bucket():
     if 'bucket' not in g:
         g.bucket = oss2.Bucket(oss2.Auth(
-            current_app.config['ACCESKEY_ID'],
+            current_app.config['ACCESS_KEY_ID'],
             current_app.config['ACCESS_KEY_SECRET']),
             current_app.config['ENDPOINT'],
             current_app.config['BUCKET_NAME']

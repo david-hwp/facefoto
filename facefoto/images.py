@@ -36,7 +36,7 @@ def get_image_by_oss_path(oss_path):
     db = get_db()
     cursor = db.cursor()
     # 1、获得photo
-    cursor.execute("SELECT * FROM `photo` where oss_path='%s'" % oss_path)
+    cursor.execute("SELECT * FROM `photo` where oss_path like '%%%s'" % oss_path)
     return cursor.fetchone()
 
 
@@ -48,9 +48,11 @@ def delete_image_by_oss_path(oss_path):
     db.commit()
 
 
+# 上传图片
 @bp.route('', methods=['POST'])
 def images():
     """upload a photo to group."""
+    global local_filename
     if request.method == 'POST':
         group_id = request.form['group_id']
         photo = request.files['photo']
@@ -58,7 +60,6 @@ def images():
             return jsonify({'code': 400, 'msg': 'photo is required.'})
         elif not group_id:
             return jsonify({'code': 400, 'msg': 'group_id is required.'})
-
         try:
             # 1、校验组是否存在
             group = get_group(group_id)
@@ -67,7 +68,6 @@ def images():
             photos = UploadSet('photos', IMAGES)
             configure_uploads(current_app, photos)
             filename = photos.save(photo)
-
             local_filename = photos.path(filename)
             oss_dir = group[1]
             oss_filename = '{0}{1}'.format(group[1], filename)
@@ -75,7 +75,7 @@ def images():
                 oss_filename = '{0}/{1}'.format(group[1], filename)
 
             # 2、获得图片的base64编码
-            photo_base64 = base64.b64encode(open(photos.path(local_filename), 'rb').read())
+            photo_base64 = base64.b64encode(open(local_filename, 'rb').read())
             encode_str = str(photo_base64, 'utf-8')
 
             # 3、通过第三方接口获得图片的特征值
@@ -96,8 +96,7 @@ def images():
                         filename, oss_filename, int(group_id), json.dumps(body)))
                 image_id = cursor.lastrowid
                 db.commit()
-                # 6、删除临时图片
-                os.remove(local_filename)
+
                 return jsonify(
                     {'code': 200, 'image_id': image_id, 'url': oss_url,
                      'url_express': current_app.config['OSS_URL_EXPIRES'],
@@ -107,13 +106,18 @@ def images():
         except Exception as e:
             traceback.print_exc()
             return jsonify({'code': 500, 'error': '{0}'.format(e)})
+        finally:
+            # 6、删除临时图片
+            os.remove(local_filename)
     else:
         return jsonify({'code': 400, 'msg': 'upload image failed.'})
 
 
+# 从oss中上传图片
 @bp.route('/oss', methods=['POST'])
 def images_from_oss():
     """upload a photo to group."""
+    global local_filename
     if request.method == 'POST':
         data = request.get_json()
         group_id = data['group_id']
@@ -121,6 +125,10 @@ def images_from_oss():
         oss_filename = data['oss_filename']
 
         try:
+            # 1、校验组是否存在
+            group = get_group(group_id)
+            if not group:
+                return jsonify({'code': 400, 'msg': 'can not found group by id [{0}]'.format(group_id)})
             filename = oss_filename.split('/')[-1]
             local_filename = current_app.instance_path + "/" + filename
             res = r.get(url=oss_url)
@@ -142,11 +150,11 @@ def images_from_oss():
                 cursor = db.cursor()
                 cursor.execute(
                     "insert into `photo` (name, oss_path, group_id, feature) VALUES ('%s','%s','%s','%s')" % (
-                        filename, oss_filename, group_id, json.dumps(body)))
+                        filename, oss_filename.split(current_app.config['BUCKET_NAME'])[-1], group_id,
+                        json.dumps(body)))
                 image_id = cursor.lastrowid
                 db.commit()
-                # 6、删除临时图片
-                os.remove(local_filename)
+
                 return jsonify(
                     {'code': 200, 'image_id': image_id, 'url': oss_url,
                      'url_express': current_app.config['OSS_URL_EXPIRES'],
@@ -156,10 +164,14 @@ def images_from_oss():
         except Exception as e:
             traceback.print_exc()
             return jsonify({'code': 500, 'error': '{0}'.format(e)})
+        finally:
+            # 6、删除临时图片
+            os.remove(local_filename)
     else:
         return jsonify({'code': 400, 'msg': 'upload image failed.'})
 
 
+# 根据oss路径搜索相似图片
 @bp.route('/searchByOssPath', methods=['POST'])
 def searchByOssPath():
     if request.method == 'POST':
@@ -202,7 +214,6 @@ def searchByOssPath():
                 # print(sorted_matched_images)
                 result_body = []
                 for matched in sorted_matched_images:
-                    oss_path = matched[2]
                     expires = current_app.config['OSS_URL_EXPIRES']
                     result_body.append({'id': matched[0], 'name': matched[1], 'expires': expires})
 
@@ -211,7 +222,8 @@ def searchByOssPath():
             return jsonify({'code': 500, 'error': "{0}".format(e)})
 
 
-@bp.route('', methods=['GET'])
+# 根据图片id和分组id搜索图片
+@bp.route('/search', methods=['GET'])
 def search():
     try:
         group_id = request.args.get('group_id')
@@ -270,6 +282,32 @@ def sort_by_value(d):
     return [backitems[i][1] for i in range(0, len(backitems))]
 
 
+# 根据id获得图片url
+@bp.route('<int:image_id>', methods=['GET'])
+def get(image_id):
+    try:
+        if request.args.get('expires'):
+            expires = int(request.args.get('expires'))
+        else:
+            expires = current_app.config['OSS_URL_EXPIRES']
+        print(expires)
+
+        if not image_id:
+            return jsonify({'code': 400, 'msg': 'image_id is required.'})
+        # 1、获得photo
+        image = get_image(image_id)
+
+        oss_url = get_oss_url(image[2], expires)
+        if not image:
+            return jsonify({'code': 400, 'msg': 'can not found image by id [{0}]'.format(image_id)})
+
+        return jsonify(
+            {'code': 200, 'oss_url': oss_url})
+    except Exception as e:
+        return jsonify({'code': 500, 'error': "{0}".format(e)})
+
+
+# 删除图片
 @bp.route('<int:image_id>', methods=['DELETE'])
 def delete(image_id):
     try:
