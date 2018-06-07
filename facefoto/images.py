@@ -166,7 +166,13 @@ def images_from_oss():
             return jsonify({'code': 500, 'error': '{0}'.format(e)})
         finally:
             # 6、删除临时图片
-            os.remove(local_filename)
+            try:
+                if os.path.isfile(local_filename):
+                    os.remove(local_filename)
+            except FileNotFoundError:
+                print("delete not exits file")
+            except Exception:
+                traceback.print_exc()
     else:
         return jsonify({'code': 400, 'msg': 'upload image failed.'})
 
@@ -243,7 +249,13 @@ def search_by_photo():
             return jsonify({'code': 500, 'error': '{0}'.format(e)})
         finally:
             # 6、删除临时图片
-            os.remove(local_filename)
+            try:
+                if os.path.isfile(local_filename):
+                    os.remove(local_filename)
+            except FileNotFoundError:
+                print("delete not exits file")
+            except Exception:
+                traceback.print_exc()
     else:
         return jsonify({'code': 400, 'msg': 'upload image failed.'})
 
