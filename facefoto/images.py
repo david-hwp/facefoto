@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import traceback
+import time
 
 import numpy
 import requests as r
@@ -132,8 +133,14 @@ def images_from_oss():
             filename = oss_filename.split('/')[-1]
             local_filename = current_app.instance_path + "/" + filename
             res = r.get(url=oss_url)
-            with open(local_filename, 'wb') as f:
-                f.write(res.content)
+            if res:
+                with open(local_filename, 'wb') as f:
+                    f.write(res.content)
+            else:
+                time.sleep(0.1)
+                res1 = r.get(url=oss_url)
+                with open(local_filename, 'wb') as f:
+                    f.write(res1.content)
             # 2、获得图片的base64编码
             photo_base64 = base64.b64encode(open(local_filename, 'rb').read())
             encode_str = str(photo_base64, 'utf-8')
