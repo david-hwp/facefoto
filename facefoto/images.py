@@ -279,7 +279,9 @@ def search():
             expires = current_app.config['OSS_URL_EXPIRES']
             oss_url = get_oss_url(oss_path, expires)
             result_body.append({'id': matched[0], 'name': matched[1], 'url': oss_url, 'expires': expires})
-        return jsonify({'code': 200, 'data': result_body})
+        response = jsonify({'code': 200, 'data': result_body})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
     except Exception as e:
         return jsonify({'code': 500, 'error': "{0}".format(e)})
 
