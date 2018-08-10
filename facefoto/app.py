@@ -30,7 +30,7 @@ def create_app(test_config=None):
     # register the database commands
     from facefoto import db
     db.init_app(app)
-    app.config['UPLOADS_DEFAULT_DEST'] = app.instance_path+'/photos'
+    app.config['UPLOADS_DEFAULT_DEST'] = app.instance_path + '/photos'
     photos = UploadSet('photos', IMAGES)
     configure_uploads(app, photos)
 
@@ -39,11 +39,15 @@ def create_app(test_config=None):
         return 'Hello, World!'
 
     # apply the blueprints to the app
-    from facefoto import oss, groups, images
+    from facefoto import oss, groups, face, images, cache, notify_client
     # app.register_blueprint(auth.bp, url_prefix='/auth')
     app.register_blueprint(oss.bp, url_prefix='/oss')
     app.register_blueprint(groups.bp, url_prefix='/groups')
+    app.register_blueprint(face.bp, url_prefix='/face')
     app.register_blueprint(images.bp, url_prefix='/images')
+    app.register_blueprint(cache.bp, url_prefix='/cache')
+    app.register_blueprint(notify_client.bp, url_prefix='/notify')
+    # app.register_blueprint(cache.bp, url_prefix='/cache')
     # app.register_blueprint(blog.bp)
 
     # make url_for('index') == url_for('blog.index')

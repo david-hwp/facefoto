@@ -18,7 +18,7 @@ setup(
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        'flask', 'click', 'werkzeug', 'pymysql', 'flask_uploads', 'oss2', 'numpy'
+        'flask', 'click', 'werkzeug', 'DBUtils', 'pymysql', 'flask_uploads', 'oss2', 'numpy'
     ],
     extras_require={
         'test': [
